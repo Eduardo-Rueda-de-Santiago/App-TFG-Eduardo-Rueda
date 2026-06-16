@@ -1,0 +1,16 @@
+[project]
+name = "ai-agent"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "faster-whisper>=1.2.1",
+    "fastmcp>=3.4.2",
+    "llama-cpp-python>=0.3.30",
+    "piper-tts>=1.4.2",
+    "pydantic>=2.13.4",
+]
+
+[[tool.uv.index]]
+url = "https://abetlen.github.io/llama-cpp-python/whl/cu132"
