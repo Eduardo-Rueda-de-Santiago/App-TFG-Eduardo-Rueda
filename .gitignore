@@ -184,3 +184,4 @@ research/voice-models/piper1-gpl/extra_voice_test.py
 /research/voice-models/piper1-gpl/test_voice
 web/memory-game/apps/frontend/.next/
 benchmarks/models/
+.vscode/settings.json
