@@ -1,0 +1,16 @@
+=== SYSTEM INFORMATION ===
+Machine:   AMD64
+Version:   10.0.26200
+Platform:  Windows-11-10.0.26200-SP0
+System:    Windows
+Processor: Intel64 Family 6 Model 154 Stepping 3, GenuineIntel
+
+=== GPU INFORMATION ===
+
+--- GPU 0 ---
+Name: NVIDIA GeForce RTX 3050 Ti Laptop GPU
+Driver Version: 576.57
+Total Memory (MiB): 4096 MiB
+Used Memory (MiB): 584 MiB
+Free Memory (MiB): 3379 MiB
+GPU Temperature (°C): 84

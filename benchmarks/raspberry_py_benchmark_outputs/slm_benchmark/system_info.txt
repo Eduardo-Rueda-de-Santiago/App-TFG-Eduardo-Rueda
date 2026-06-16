@@ -1,0 +1,9 @@
+=== SYSTEM INFORMATION ===
+Machine:   aarch64
+Version:   #1 SMP PREEMPT Debian 1:6.18.29-1+rpt1 (2026-05-12)
+Platform:  Linux-6.18.29+rpt-rpi-2712-aarch64-with-glibc2.41
+System:    Linux
+Processor: 
+
+=== GPU INFORMATION ===
+nvidia-smi not available or GPU not detected.

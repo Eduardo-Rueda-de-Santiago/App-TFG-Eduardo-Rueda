@@ -1,0 +1,413 @@
+.boardWrapper {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem;
+  color: #f1f3f9;
+  font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2.5rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.titleArea {
+  display: flex;
+  flex-direction: column;
+}
+
+.glowTitle {
+  font-size: 2.5rem;
+  font-weight: 800;
+  margin: 0;
+  background: linear-gradient(135deg, #00f2fe 0%, #4facfe 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  text-shadow: 0 0 30px rgba(0, 242, 254, 0.2);
+}
+
+.subtitle {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.95rem;
+  margin: 0.25rem 0 0 0;
+}
+
+.statusBadge {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem 1.2rem;
+  border-radius: 30px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(10px);
+}
+
+.statusDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  position: relative;
+}
+
+.online {
+  background-color: #00ff88;
+  box-shadow: 0 0 10px #00ff88;
+}
+
+.offline {
+  background-color: #ff3b30;
+  box-shadow: 0 0 10px #ff3b30;
+}
+
+.statusText {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+/* MAIN LAYOUT */
+.mainLayout {
+  display: grid;
+  grid-template-columns: 1fr 380px;
+  gap: 2.5rem;
+}
+
+@media (max-width: 968px) {
+  .mainLayout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.gameContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* STATS BAR */
+.statsRow {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.statBox {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 0.75rem 1.5rem;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 100px;
+  backdrop-filter: blur(8px);
+}
+
+.statLabel {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.45);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.2rem;
+}
+
+.statVal {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #00f2fe;
+}
+
+.resetButton {
+  margin-left: auto;
+  background: linear-gradient(135deg, #00c6ff 0%, #0072ff 100%);
+  color: white;
+  border: none;
+  padding: 0.9rem 1.8rem;
+  font-weight: 600;
+  border-radius: 12px;
+  cursor: pointer;
+  box-shadow: 0 4px 15px rgba(0, 114, 255, 0.25);
+  transition: all 0.2s ease;
+  font-size: 0.95rem;
+}
+
+.resetButton:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 114, 255, 0.4);
+}
+
+.resetButton:active {
+  transform: translateY(0);
+}
+
+/* VICTORY OVERLAY */
+.victoryCard {
+  background: linear-gradient(135deg, rgba(0, 242, 254, 0.15), rgba(0, 255, 136, 0.15));
+  border: 1px solid rgba(0, 255, 136, 0.3);
+  box-shadow: 0 0 30px rgba(0, 255, 136, 0.1);
+  padding: 2rem;
+  border-radius: 16px;
+  text-align: center;
+  margin-bottom: 1.5rem;
+  animation: fadeIn 0.4s ease-out;
+}
+
+.victoryCard h2 {
+  font-size: 2.2rem;
+  margin: 0 0 0.5rem 0;
+  color: #00ff88;
+  text-shadow: 0 0 15px rgba(0, 255, 136, 0.4);
+}
+
+.victoryCard p {
+  color: rgba(255, 255, 255, 0.85);
+  margin-bottom: 1.5rem;
+}
+
+.victoryReset {
+  background: #00ff88;
+  color: #020617;
+  border: none;
+  font-weight: 700;
+  font-size: 1rem;
+  padding: 0.8rem 2rem;
+  border-radius: 30px;
+  cursor: pointer;
+  box-shadow: 0 4px 15px rgba(0, 255, 136, 0.3);
+  transition: all 0.2s ease;
+}
+
+.victoryReset:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 255, 136, 0.6);
+}
+
+/* CARD GRID */
+.cardGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1.25rem;
+}
+
+/* DEVELOPER PANEL */
+.devPanel {
+  background: radial-gradient(circle at top right, rgba(23, 27, 48, 0.95), rgba(11, 14, 28, 0.95));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 2rem;
+  height: fit-content;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+}
+
+.panelHeader {
+  margin-bottom: 2rem;
+}
+
+.panelHeader h3 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #00f2fe;
+  margin: 0;
+  text-shadow: 0 0 10px rgba(0, 242, 254, 0.3);
+}
+
+.panelHeader p {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.5);
+  margin: 0.25rem 0 0 0;
+}
+
+.consoleSection {
+  margin-bottom: 2rem;
+}
+
+.consoleSection:last-child {
+  margin-bottom: 0;
+}
+
+.consoleLabel {
+  display: block;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.45);
+  letter-spacing: 0.05em;
+  margin-bottom: 0.75rem;
+}
+
+.flexGroup {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.selectInput {
+  flex: 1;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.9);
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  outline: none;
+  font-size: 0.9rem;
+}
+
+.selectInput option {
+  background: #0d111d;
+  color: white;
+}
+
+.simButton {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: white;
+  padding: 0.75rem 1.25rem;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.simButton:hover {
+  background: rgba(0, 242, 254, 0.1);
+  border-color: rgba(0, 242, 254, 0.5);
+  color: #00f2fe;
+}
+
+.dangerButton {
+  width: 100%;
+}
+
+.dangerButton:hover {
+  background: rgba(255, 59, 48, 0.1);
+  border-color: rgba(255, 59, 48, 0.5);
+  color: #ff3b30;
+}
+
+.curlBox {
+  position: relative;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 1rem 3rem 1rem 1rem;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 0.8rem;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.curlBox code {
+  color: #79c0ff;
+}
+
+.copyButton {
+  position: absolute;
+  right: 0.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.8);
+  padding: 0.3rem 0.6rem;
+  font-size: 0.75rem;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.copyButton:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: white;
+}
+
+.logBox {
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  padding: 1rem;
+  min-height: 80px;
+  max-height: 120px;
+  overflow-y: auto;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 0.8rem;
+}
+
+.logPlaceholder {
+  color: rgba(255, 255, 255, 0.3);
+  text-align: center;
+  margin-top: 1.25rem;
+}
+
+.logItem {
+  color: rgba(255, 255, 255, 0.8);
+  line-height: 1.4;
+}
+
+.logTimestamp {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.logSuccess {
+  color: #00ff88;
+  font-weight: bold;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.simButtonActive {
+  background: rgba(0, 242, 254, 0.15) !important;
+  border-color: rgba(0, 242, 254, 0.5) !important;
+  color: #00f2fe !important;
+  flex: 1;
+}
+
+.dangerButton {
+  flex: 1;
+}
+
+.tabBar {
+  display: flex;
+  background: rgba(0, 0, 0, 0.2);
+  padding: 0.25rem;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  margin-bottom: 0.75rem;
+  gap: 0.25rem;
+}
+
+.tabButton {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.4);
+  padding: 0.5rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.tabButton:hover {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.tabActive {
+  background: rgba(255, 255, 255, 0.06);
+  color: #00f2fe;
+  border: 1px solid rgba(0, 242, 254, 0.2);
+}
