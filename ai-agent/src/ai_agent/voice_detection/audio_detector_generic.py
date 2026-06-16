@@ -39,7 +39,6 @@ Callback protocol
 from abc import ABC, abstractmethod
 from typing import Callable
 
-
 # Type aliases for readability
 SpeechStartCallback = Callable[[], None]
 SpeechEndCallback = Callable[[list[bytes]], None]

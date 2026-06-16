@@ -47,10 +47,10 @@ Typical back-ends
 from abc import ABC, abstractmethod
 from typing import Callable, Protocol, runtime_checkable
 
-
 # ---------------------------------------------------------------------------
 # Minimal queue protocol — decouples the transcriber from any specific Queue
 # ---------------------------------------------------------------------------
+
 
 @runtime_checkable
 class OutputQueue(Protocol):
@@ -141,6 +141,7 @@ class AudioTranscriberGeneric(ABC):
         self._on_transcription_started()
 
         import asyncio  # local import — keeps the module import-light
+
         asyncio.create_task(self._run_transcription(audio_frames))
 
     # ------------------------------------------------------------------

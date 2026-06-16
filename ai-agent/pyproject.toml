@@ -11,6 +11,7 @@ dependencies = [
     "piper-tts>=1.4.2",
     "pydantic>=2.13.4",
     "sounddevice>=0.5.5",
+    "webrtcvad-wheels>=2.0.14",
 ]
 
 [[tool.uv.index]]
