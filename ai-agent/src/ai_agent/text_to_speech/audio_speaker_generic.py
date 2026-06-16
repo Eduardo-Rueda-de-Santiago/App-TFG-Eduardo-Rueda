@@ -45,12 +45,12 @@ Typical TTS back-ends
 
 from abc import ABC, abstractmethod
 from typing import Callable, Protocol, runtime_checkable
-import asyncio
 
 
 # ---------------------------------------------------------------------------
 # Minimal queue protocol — keeps the speaker decoupled from asyncio.Queue
 # ---------------------------------------------------------------------------
+
 
 @runtime_checkable
 class InputQueue(Protocol):

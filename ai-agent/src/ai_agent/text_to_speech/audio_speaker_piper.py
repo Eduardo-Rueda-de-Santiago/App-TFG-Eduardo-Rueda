@@ -57,7 +57,10 @@ import numpy as np
 import sounddevice as sd
 from piper import PiperVoice, SynthesisConfig  # pip install piper-tts
 
-from audio_speaker_generic import AudioSpeakerGeneric, InputQueue
+from ai_agent.text_to_speech.audio_speaker_generic import (
+    AudioSpeakerGeneric,
+    InputQueue,
+)
 
 logger = logging.getLogger(__name__)
 
