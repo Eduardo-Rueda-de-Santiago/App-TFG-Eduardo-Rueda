@@ -200,7 +200,7 @@ def _chat(
 # =============================================================================
 
 
-def run_brain(llm: Llama, inp: BrainInput) -> BrainDecision:
+def run_brain(llm: Llama, inp: BrainInput) -> tuple[BrainDecision, float | None]:
     """
     Ask the Brain model to analyse the user prompt and decide on routing.
 
@@ -216,8 +216,9 @@ def run_brain(llm: Llama, inp: BrainInput) -> BrainDecision:
 
     Returns
     -------
-    BrainDecision
-        Routing decision including whether a tool call is needed and which one.
+    tuple[BrainDecision, float | None]
+        Routing decision and tokens-per-second throughput (or None if
+        usage data is unavailable).
     """
     print("\n── Step 1: Brain ──")
     print(f"   User prompt: {inp.user_prompt!r}")
@@ -227,12 +228,14 @@ def run_brain(llm: Llama, inp: BrainInput) -> BrainDecision:
         "schema": BrainDecision.model_json_schema(),
     }
 
+    t0 = time.perf_counter()
     resp = _chat(
         llm,
         BRAIN_SYSTEM_PROMPT,
         inp.user_prompt,
         response_format=response_format,
     )
+    elapsed = time.perf_counter() - t0
 
     raw_text = resp["choices"][0]["message"]["content"]
     print(f"   Raw response: {raw_text[:200]}")
@@ -244,7 +247,11 @@ def run_brain(llm: Llama, inp: BrainInput) -> BrainDecision:
     if decision.needs_use_tool:
         print(f"   Tool prompt: {decision.specialized_tool_prompt!r}")
 
-    return decision
+    usage = resp.get("usage") or {}
+    completion_tokens = usage.get("completion_tokens")
+    tps = (completion_tokens / elapsed) if (completion_tokens and elapsed > 0) else None
+
+    return decision, tps
 
 
 # =============================================================================
@@ -294,7 +301,7 @@ def run_tool_caller(
     llm: Llama,
     inp: ToolCallerInput,
     brain_decision: BrainDecision,
-) -> ToolCallerOutput:
+) -> tuple[ToolCallerOutput, float | None]:
     """
     Ask the Tool Caller model to invoke a single MCP tool and execute it.
 
@@ -318,8 +325,9 @@ def run_tool_caller(
 
     Returns
     -------
-    ToolCallerOutput
-        Aggregated records of all tool calls made (may be empty on failure).
+    tuple[ToolCallerOutput, float | None]
+        Aggregated tool call records and tokens-per-second throughput (or
+        None if usage data is unavailable).
     """
     print("\n── Step 2: Tool Caller ──")
     print(f"   Instruction: {inp.brain_instruction!r}")
@@ -337,6 +345,7 @@ def run_tool_caller(
         "function": {"name": target_tool},
     }
 
+    t0 = time.perf_counter()
     resp = _chat(
         llm,
         TOOL_CALLER_SYSTEM_PROMPT,
@@ -346,6 +355,7 @@ def run_tool_caller(
         max_tokens=512,                  # FIX 3: more headroom
         temperature=0.0,                 # FIX 3: deterministic
     )
+    elapsed = time.perf_counter() - t0
 
     message = resp["choices"][0]["message"]
     tool_calls_raw = message.get("tool_calls") or []
@@ -382,10 +392,14 @@ def run_tool_caller(
         except (ValueError, KeyError):
             pass
 
+    usage = resp.get("usage") or {}
+    completion_tokens = usage.get("completion_tokens")
+    tps = (completion_tokens / elapsed) if (completion_tokens and elapsed > 0) else None
+
     if not tool_calls_raw:
         print("   ⚠ Model produced no tool calls even with forced choice.")
         print(f"   Raw content: {message.get('content', '')[:200]}")
-        return ToolCallerOutput(calls=[])
+        return ToolCallerOutput(calls=[]), tps
 
     # Execute each tool call against the backend
     records: list[ToolCallRecord] = []
@@ -408,7 +422,7 @@ def run_tool_caller(
         status = "✓" if record.success else "✗"
         print(f"   {status} Result: {json.dumps(record.result)[:150]}")
 
-    return ToolCallerOutput(calls=records)
+    return ToolCallerOutput(calls=records), tps
 
 
 # =============================================================================
@@ -416,7 +430,7 @@ def run_tool_caller(
 # =============================================================================
 
 
-def run_communicator(llm: Llama, inp: CommunicatorInput) -> CommunicatorResponse:
+def run_communicator(llm: Llama, inp: CommunicatorInput) -> tuple[CommunicatorResponse, float | None]:
     """
     Ask the Communicator model (Nova) to summarise results for the user.
 
@@ -434,8 +448,9 @@ def run_communicator(llm: Llama, inp: CommunicatorInput) -> CommunicatorResponse
 
     Returns
     -------
-    CommunicatorResponse
-        The final message and task-achieved flag.
+    tuple[CommunicatorResponse, float | None]
+        The final message and task-achieved flag, plus tokens-per-second
+        throughput (or None if usage data is unavailable).
     """
     print("\n── Step 3: Communicator (Nova) ──")
 
@@ -467,12 +482,14 @@ def run_communicator(llm: Llama, inp: CommunicatorInput) -> CommunicatorResponse
         "schema": CommunicatorResponse.model_json_schema(),
     }
 
+    t0 = time.perf_counter()
     resp = _chat(
         llm,
         COMMUNICATOR_SYSTEM_PROMPT,
         user_message,
         response_format=response_format,
     )
+    elapsed = time.perf_counter() - t0
 
     raw_text = resp["choices"][0]["message"]["content"]
     print(f"   Raw response: {raw_text[:200]}")
@@ -481,7 +498,12 @@ def run_communicator(llm: Llama, inp: CommunicatorInput) -> CommunicatorResponse
     result = CommunicatorResponse.model_validate(parsed)
 
     print(f"   Task achieved: {result.task_achieved}")
-    return result
+
+    usage = resp.get("usage") or {}
+    completion_tokens = usage.get("completion_tokens")
+    tps = (completion_tokens / elapsed) if (completion_tokens and elapsed > 0) else None
+
+    return result, tps
 
 
 # =============================================================================
@@ -518,19 +540,20 @@ def run_pipeline(manager: ModelManager, user_prompt: str) -> PipelineOutput:
 
     # ── Step 1: Brain ──
     t_brain_start = time.perf_counter()
-    brain_decision = run_brain(manager.brain, brain_input)
+    brain_decision, brain_tps = run_brain(manager.brain, brain_input)
     t_brain_done = time.perf_counter()
 
     # ── Step 2: Tool Caller (conditional) ──
     tool_result: ToolCallerOutput | None = None
+    tool_tps: float | None = None
     t_tool_start: float | None = None
     t_tool_done: float | None = None
     if brain_decision.needs_use_tool:
         tc_input = ToolCallerInput(
-            brain_instruction=brain_decision.specialized_tool_prompt
+            brain_instruction=brain_decision.specialized_tool_prompt or pipeline_input.user_prompt
         )
         t_tool_start = time.perf_counter()
-        tool_result = run_tool_caller(
+        tool_result, tool_tps = run_tool_caller(
             manager.tool_caller, tc_input, brain_decision
         )
         t_tool_done = time.perf_counter()
@@ -544,14 +567,17 @@ def run_pipeline(manager: ModelManager, user_prompt: str) -> PipelineOutput:
         tool_result=tool_result,
     )
     t_comm_start = time.perf_counter()
-    final_response = run_communicator(manager.communicator, comm_input)
+    final_response, communicator_tps = run_communicator(manager.communicator, comm_input)
     t_comm_done = time.perf_counter()
 
     timing = PipelineTiming(
         prompt_processing=t_prompt_done - t0,
         brain=t_brain_done - t_brain_start,
+        brain_tps=brain_tps,
         tool_calling=(t_tool_done - t_tool_start) if t_tool_start is not None else None,
+        tool_calling_tps=tool_tps,
         communicator=t_comm_done - t_comm_start,
+        communicator_tps=communicator_tps,
     )
 
     return PipelineOutput(

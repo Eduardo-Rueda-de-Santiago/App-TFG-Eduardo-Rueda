@@ -72,20 +72,26 @@ def _print_timing_table(timing: PipelineTiming) -> None:
     Always printed to stdout regardless of the active output mode so that
     the values are never read aloud by the TTS engine.
     """
-    rows: list[tuple[str, float | None]] = [
-        ("1. Prompt processing",           timing.prompt_processing),
-        ("2. Brain (LLM)",                 timing.brain),
-        ("3. Tool calling",                timing.tool_calling),
-        ("4. Communicator (LLM)",          timing.communicator),
-        ("5a. TTS synthesis (ONNX)",       timing.tts_synthesis),
-        ("5b. TTS playback (audio out)",   timing.tts_playback),
+    # Each row: (label, elapsed_seconds, tokens_per_second | None)
+    rows: list[tuple[str, float | None, float | None]] = [
+        ("1. Prompt processing",           timing.prompt_processing,  None),
+        ("2. Brain (LLM)",                 timing.brain,              timing.brain_tps),
+        ("3. Tool calling",                timing.tool_calling,       timing.tool_calling_tps),
+        ("4. Communicator (LLM)",          timing.communicator,       timing.communicator_tps),
+        ("5a. TTS synthesis (ONNX)",       timing.tts_synthesis,      None),
+        ("5b. TTS playback (audio out)",   timing.tts_playback,       None),
     ]
 
     label_w = 32
-    time_w  = 12
+    time_w  = 18  # wide enough for "14 tok/s 7.895 s"
 
-    def fmt_time(t: float | None) -> str:
-        return f"{t:.3f} s" if t is not None else "—  skipped  —"
+    def fmt_time(t: float | None, tps: float | None) -> str:
+        if t is None:
+            return "—  skipped  —"
+        time_str = f"{t:.3f} s"
+        if tps is not None:
+            return f"{tps:.0f} tok/s {time_str}"
+        return time_str
 
     h_sep = "╠" + "═" * (label_w + 2) + "╪" + "═" * (time_w + 2) + "╣"
     top   = "╔" + "═" * (label_w + 2) + "╤" + "═" * (time_w + 2) + "╗"
@@ -95,8 +101,8 @@ def _print_timing_table(timing: PipelineTiming) -> None:
     print("\n" + top)
     print(f"║ {'Stage':<{label_w}} │ {'Time':>{time_w}} ║")
     print(h_sep)
-    for i, (label, t) in enumerate(rows):
-        print(f"║ {label:<{label_w}} │ {fmt_time(t):>{time_w}} ║")
+    for i, (label, t, tps) in enumerate(rows):
+        print(f"║ {label:<{label_w}} │ {fmt_time(t, tps):>{time_w}} ║")
         if i < len(rows) - 1:
             print(mid)
     print(h_sep)

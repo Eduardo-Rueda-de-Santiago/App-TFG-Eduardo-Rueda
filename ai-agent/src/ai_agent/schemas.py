@@ -23,9 +23,7 @@ from pydantic import BaseModel, Field, computed_field
 # The four valid MCP tool names.  Used as a Literal constraint in BrainDecision
 # so that grammar-constrained generation can only emit one of these exact strings
 # — the model literally cannot hallucinate a tool name.
-VALID_TOOL_NAMES = Literal[
-    "get_game_state", "flip_card", "reset_game", "play_again"
-]
+VALID_TOOL_NAMES = Literal["get_game_state", "flip_card", "reset_game", "play_again"]
 
 
 # =============================================================================
@@ -36,9 +34,7 @@ VALID_TOOL_NAMES = Literal[
 class BrainInput(BaseModel):
     """What the Brain model receives."""
 
-    user_prompt: str = Field(
-        ..., description="The raw user request to analyse."
-    )
+    user_prompt: str = Field(..., description="The raw user request to analyse.")
 
 
 class BrainDecision(BaseModel):
@@ -93,9 +89,9 @@ class ToolCallRequest(BaseModel):
     hallucinate a tool name.
     """
 
-    tool_name: Literal[
-        "get_game_state", "flip_card", "reset_game", "play_again"
-    ] = Field(..., description="Which tool to call.")
+    tool_name: Literal["get_game_state", "flip_card", "reset_game", "play_again"] = (
+        Field(..., description="Which tool to call.")
+    )
     card_id: Optional[int] = Field(
         default=None,
         description=(
@@ -123,9 +119,7 @@ class ToolCallRecord(BaseModel):
     result: Any = Field(
         default=None, description="The raw result returned by the tool."
     )
-    success: bool = Field(
-        default=True, description="Whether the tool call succeeded."
-    )
+    success: bool = Field(default=True, description="Whether the tool call succeeded.")
     error: Optional[str] = Field(
         default=None, description="Error message if the call failed."
     )
@@ -181,12 +175,31 @@ class CommunicatorResponse(BaseModel):
 class PipelineTiming(BaseModel):
     """Timing breakdown for each pipeline step (in seconds)."""
 
-    prompt_processing: float = Field(0.0, description="Time to validate and set up the pipeline input.")
+    prompt_processing: float = Field(
+        0.0, description="Time to validate and set up the pipeline input."
+    )
     brain: float = Field(0.0, description="Time spent in the Brain LLM step.")
-    tool_calling: Optional[float] = Field(None, description="Time spent in Tool Caller step (None if skipped).")
-    communicator: float = Field(0.0, description="Time spent in the Communicator LLM step.")
-    tts_synthesis: Optional[float] = Field(None, description="Time for TTS ONNX inference (text → PCM).")
-    tts_playback: Optional[float] = Field(None, description="Time for TTS audio playback to the output device.")
+    tool_calling: Optional[float] = Field(
+        None, description="Time spent in Tool Caller step (None if skipped)."
+    )
+    communicator: float = Field(
+        0.0, description="Time spent in the Communicator LLM step."
+    )
+    brain_tps: Optional[float] = Field(
+        None, description="Brain LLM throughput in tokens/second."
+    )
+    tool_calling_tps: Optional[float] = Field(
+        None, description="Tool Caller LLM throughput in tokens/second (None if skipped)."
+    )
+    communicator_tps: Optional[float] = Field(
+        None, description="Communicator LLM throughput in tokens/second."
+    )
+    tts_synthesis: Optional[float] = Field(
+        None, description="Time for TTS ONNX inference (text → PCM)."
+    )
+    tts_playback: Optional[float] = Field(
+        None, description="Time for TTS audio playback to the output device."
+    )
 
     @computed_field  # type: ignore[misc]
     @property
@@ -227,3 +240,10 @@ class PipelineOutput(BaseModel):
     tool_result: Optional[ToolCallerOutput] = None
     final_response: CommunicatorResponse
     timing: PipelineTiming = Field(default_factory=PipelineTiming)
+
+
+class ChatMetrics(BaseModel):
+    response: BaseModel
+    elapsed: float
+    completion_tokens: int
+    tokens_per_second: float
