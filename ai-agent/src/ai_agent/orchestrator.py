@@ -79,7 +79,6 @@ from ai_agent.schemas import (
     ToolCallRecord,
 )
 
-
 # =============================================================================
 # HELPERS
 # =============================================================================
@@ -289,7 +288,9 @@ def _resolve_tool_name(brain_decision: BrainDecision) -> str:
         return "play_again"
     # Check "show/state/board" BEFORE "flip/card" — "show me the cards" means
     # get_game_state, not flip_card.
-    if any(kw in prompt_lower for kw in ("state", "show", "board", "status", "all cards")):
+    if any(
+        kw in prompt_lower for kw in ("state", "show", "board", "status", "all cards")
+    ):
         return "get_game_state"
     if any(kw in prompt_lower for kw in ("flip", "turn over", "reveal")):
         return "flip_card"
@@ -350,10 +351,10 @@ def run_tool_caller(
         llm,
         TOOL_CALLER_SYSTEM_PROMPT,
         inp.brain_instruction,
-        tools=single_tool_def,          # FIX 1: one tool only
+        tools=single_tool_def,  # FIX 1: one tool only
         tool_choice=forced_tool_choice,  # FIX 2: force the call
-        max_tokens=512,                  # FIX 3: more headroom
-        temperature=0.0,                 # FIX 3: deterministic
+        max_tokens=512,  # FIX 3: more headroom
+        temperature=0.0,  # FIX 3: deterministic
     )
     elapsed = time.perf_counter() - t0
 
@@ -430,7 +431,9 @@ def run_tool_caller(
 # =============================================================================
 
 
-def run_communicator(llm: Llama, inp: CommunicatorInput) -> tuple[CommunicatorResponse, float | None]:
+def run_communicator(
+    llm: Llama, inp: CommunicatorInput
+) -> tuple[CommunicatorResponse, float | None]:
     """
     Ask the Communicator model (Nova) to summarise results for the user.
 
@@ -550,7 +553,8 @@ def run_pipeline(manager: ModelManager, user_prompt: str) -> PipelineOutput:
     t_tool_done: float | None = None
     if brain_decision.needs_use_tool:
         tc_input = ToolCallerInput(
-            brain_instruction=brain_decision.specialized_tool_prompt or pipeline_input.user_prompt
+            brain_instruction=brain_decision.specialized_tool_prompt
+            or pipeline_input.user_prompt
         )
         t_tool_start = time.perf_counter()
         tool_result, tool_tps = run_tool_caller(
@@ -567,7 +571,9 @@ def run_pipeline(manager: ModelManager, user_prompt: str) -> PipelineOutput:
         tool_result=tool_result,
     )
     t_comm_start = time.perf_counter()
-    final_response, communicator_tps = run_communicator(manager.communicator, comm_input)
+    final_response, communicator_tps = run_communicator(
+        manager.communicator, comm_input
+    )
     t_comm_done = time.perf_counter()
 
     timing = PipelineTiming(

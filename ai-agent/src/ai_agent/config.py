@@ -228,7 +228,7 @@ WHISPER_LANGUAGE: str = "en"
 VAD_SAMPLE_RATE: int = 16_000
 
 # VAD aggressiveness 0–3.  Lower = more sensitive; higher = more noise-robust.
-VAD_AGGRESSIVENESS: int = 3
+VAD_AGGRESSIVENESS: int = 1
 
 # Minimum sustained silence (ms) after speech before the utterance is finalised.
 VAD_SILENCE_HOLD_MS: int = 500

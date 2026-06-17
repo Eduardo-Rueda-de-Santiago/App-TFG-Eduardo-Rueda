@@ -1450,7 +1450,7 @@ wheels = [
 [[package]]
 name = "llama-cpp-python"
 version = "0.3.30"
-source = { registry = "https://abetlen.github.io/llama-cpp-python/whl/cu132" }
+source = { registry = "https://abetlen.github.io/llama-cpp-python/whl/cu124" }
 dependencies = [
     { name = "diskcache" },
     { name = "jinja2" },
@@ -1458,8 +1458,8 @@ dependencies = [
     { name = "typing-extensions" },
 ]
 wheels = [
-    { url = "https://github.com/abetlen/llama-cpp-python/releases/download/v0.3.30-cu132/llama_cpp_python-0.3.30-py3-none-manylinux_2_35_x86_64.whl" },
-    { url = "https://github.com/abetlen/llama-cpp-python/releases/download/v0.3.30-cu132/llama_cpp_python-0.3.30-py3-none-win_amd64.whl" },
+    { url = "https://github.com/abetlen/llama-cpp-python/releases/download/v0.3.30-cu124/llama_cpp_python-0.3.30-py3-none-manylinux_2_35_x86_64.whl" },
+    { url = "https://github.com/abetlen/llama-cpp-python/releases/download/v0.3.30-cu124/llama_cpp_python-0.3.30-py3-none-win_amd64.whl" },
 ]
 
 [[package]]
