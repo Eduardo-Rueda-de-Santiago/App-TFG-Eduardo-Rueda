@@ -5,12 +5,17 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "fastapi>=0.137.1",
     "faster-whisper>=1.2.1",
     "fastmcp>=3.4.2",
     "llama-cpp-python>=0.3.30",
     "piper-tts>=1.4.2",
     "pydantic>=2.13.4",
+    "pydantic-ai>=1.0.0",
+    "pydantic-ai-slim[openai]>=1.107.0",
+    "pydantic-settings>=2.0.0",
     "sounddevice>=0.5.5",
+    "starlette-context>=0.5.1",
     "webrtcvad-wheels>=2.0.14",
 ]
 
