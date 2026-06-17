@@ -22,17 +22,19 @@ _MODELS_DIR = _REPO_ROOT / "models"
 # LLM MODEL PATHS  (edit to point at your local .gguf files)
 # =============================================================================
 
-BRAIN_MODEL_PATH = str(_MODELS_DIR / "LFM2.5-1.2B-Instruct-Q4_0.gguf")
-# BRAIN_MODEL_PATH = str(_MODELS_DIR / "LFM2.5-8B-A1B-Q4_0.gguf")
+# BRAIN_MODEL_PATH = str(_MODELS_DIR / "LFM2.5-1.2B-Instruct-Q4_0.gguf")
+BRAIN_MODEL_PATH = str(
+    _MODELS_DIR / "../../benchmarks/models/LFM2.5-1.2B-Thinking-Q4_0.gguf"
+)
 # The "brain" decides whether a tool call is needed and which one.
 # Any instruction-following model works; it only needs to produce JSON.
 # Examples: Phi-3-mini, Qwen2-1.5B-Instruct, Mistral-7B-Instruct
 
-TOOL_CALLER_MODEL_PATH = str(_MODELS_DIR / "LFM2.5-1.2B-Instruct-Q4_0.gguf")
+TOOL_CALLER_MODEL_PATH = str(_MODELS_DIR / "qwen3-0.6b-q4_k_m.gguf")
 # Must support function-calling (chatml-function-calling or functionary format).
 # Recommended: functionary-small-v3.2.Q4_K_M.gguf, Hermes-2-Pro-Mistral-7B
 
-COMMUNICATOR_MODEL_PATH = str(_MODELS_DIR / "LFM2.5-1.2B-Instruct-Q4_0.gguf")
+COMMUNICATOR_MODEL_PATH = str(_MODELS_DIR / "qwen3-0.6b-q4_k_m.gguf")
 # COMMUNICATOR_MODEL_PATH = str(_MODELS_DIR / "LFM2.5-1.2B-Instruct-Q4_0.gguf")
 # Generates the final user-facing prose reply.  Any conversational model works.
 # Examples: OpenHermes-2.5, Dolphin-Mistral, Llama-3-8B-Instruct
