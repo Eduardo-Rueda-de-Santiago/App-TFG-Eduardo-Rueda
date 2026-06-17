@@ -57,7 +57,55 @@ from ai_agent.orchestrator import run_pipeline
 from ai_agent.output.output_generic import OutputGeneric
 from ai_agent.output.output_terminal import TerminalOutput
 from ai_agent.output.output_tts import TTSOutput
-from ai_agent.schemas import PipelineOutput
+from ai_agent.schemas import PipelineOutput, PipelineTiming
+
+
+# =============================================================================
+# Timing table
+# =============================================================================
+
+
+def _print_timing_table(timing: PipelineTiming) -> None:
+    """
+    Print a formatted table of per-step timing to stdout.
+
+    Always printed to stdout regardless of the active output mode so that
+    the values are never read aloud by the TTS engine.
+    """
+    rows: list[tuple[str, float | None]] = [
+        ("1. Prompt processing",           timing.prompt_processing),
+        ("2. Brain (LLM)",                 timing.brain),
+        ("3. Tool calling",                timing.tool_calling),
+        ("4. Communicator (LLM)",          timing.communicator),
+        ("5a. TTS synthesis (ONNX)",       timing.tts_synthesis),
+        ("5b. TTS playback (audio out)",   timing.tts_playback),
+    ]
+
+    label_w = 32
+    time_w  = 12
+
+    def fmt_time(t: float | None) -> str:
+        return f"{t:.3f} s" if t is not None else "—  skipped  —"
+
+    h_sep = "╠" + "═" * (label_w + 2) + "╪" + "═" * (time_w + 2) + "╣"
+    top   = "╔" + "═" * (label_w + 2) + "╤" + "═" * (time_w + 2) + "╗"
+    bot   = "╚" + "═" * (label_w + 2) + "╧" + "═" * (time_w + 2) + "╝"
+    mid   = "╟" + "─" * (label_w + 2) + "┼" + "─" * (time_w + 2) + "╢"
+
+    print("\n" + top)
+    print(f"║ {'Stage':<{label_w}} │ {'Time':>{time_w}} ║")
+    print(h_sep)
+    for i, (label, t) in enumerate(rows):
+        print(f"║ {label:<{label_w}} │ {fmt_time(t):>{time_w}} ║")
+        if i < len(rows) - 1:
+            print(mid)
+    print(h_sep)
+    print(f"║ {'Pipeline total (no TTS)':<{label_w}} │ {f'{timing.pipeline_total:.3f} s':>{time_w}} ║")
+    tts_used = timing.tts_synthesis is not None or timing.tts_playback is not None
+    if tts_used:
+        print(mid)
+        print(f"║ {'Grand total':<{label_w}} │ {f'{timing.total:.3f} s':>{time_w}} ║")
+    print(bot + "\n")
 
 
 # =============================================================================
@@ -121,6 +169,17 @@ async def run_agent_loop(
                 task_achieved=pipeline_out.final_response.task_achieved,
             )
 
+            # Collect TTS timing (blocks until playback finishes) then print.
+            timing = pipeline_out.timing
+            if isinstance(output, TTSOutput):
+                await output.wait_for_speech_done()
+                timing = timing.model_copy(update={
+                    "tts_synthesis": output.last_synth_duration,
+                    "tts_playback":  output.last_play_duration,
+                })
+
+            _print_timing_table(timing)
+
             if debug:
                 print("\n── Full pipeline output (JSON) ──")
                 print(pipeline_out.model_dump_json(indent=2))
@@ -167,6 +226,18 @@ async def run_single(
             pipeline_out.final_response.message,
             task_achieved=pipeline_out.final_response.task_achieved,
         )
+
+        # Collect TTS timing (blocks until playback finishes) then print.
+        timing = pipeline_out.timing
+        if isinstance(output, TTSOutput):
+            await output.wait_for_speech_done()
+            timing = timing.model_copy(update={
+                    "tts_synthesis": output.last_synth_duration,
+                    "tts_playback":  output.last_play_duration,
+                })
+
+        _print_timing_table(timing)
+
         if debug:
             print("\n── Full pipeline output (JSON) ──")
             print(pipeline_out.model_dump_json(indent=2))

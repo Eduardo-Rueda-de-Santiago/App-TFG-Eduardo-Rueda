@@ -22,16 +22,18 @@ _MODELS_DIR = _REPO_ROOT / "models"
 # LLM MODEL PATHS  (edit to point at your local .gguf files)
 # =============================================================================
 
-BRAIN_MODEL_PATH = str(_MODELS_DIR / "LFM2.5-8B-A1B-Q4_0.gguf")
+BRAIN_MODEL_PATH = str(_MODELS_DIR / "LFM2.5-1.2B-Instruct-Q4_0.gguf")
+# BRAIN_MODEL_PATH = str(_MODELS_DIR / "LFM2.5-8B-A1B-Q4_0.gguf")
 # The "brain" decides whether a tool call is needed and which one.
 # Any instruction-following model works; it only needs to produce JSON.
 # Examples: Phi-3-mini, Qwen2-1.5B-Instruct, Mistral-7B-Instruct
 
-TOOL_CALLER_MODEL_PATH = str(_MODELS_DIR / "qwen3-0.6b-q4_k_m.gguf")
+TOOL_CALLER_MODEL_PATH = str(_MODELS_DIR / "LFM2.5-1.2B-Instruct-Q4_0.gguf")
 # Must support function-calling (chatml-function-calling or functionary format).
 # Recommended: functionary-small-v3.2.Q4_K_M.gguf, Hermes-2-Pro-Mistral-7B
 
 COMMUNICATOR_MODEL_PATH = str(_MODELS_DIR / "LFM2.5-1.2B-Instruct-Q4_0.gguf")
+# COMMUNICATOR_MODEL_PATH = str(_MODELS_DIR / "LFM2.5-1.2B-Instruct-Q4_0.gguf")
 # Generates the final user-facing prose reply.  Any conversational model works.
 # Examples: OpenHermes-2.5, Dolphin-Mistral, Llama-3-8B-Instruct
 
@@ -226,10 +228,10 @@ WHISPER_LANGUAGE: str = "en"
 VAD_SAMPLE_RATE: int = 16_000
 
 # VAD aggressiveness 0–3.  Lower = more sensitive; higher = more noise-robust.
-VAD_AGGRESSIVENESS: int = 1
+VAD_AGGRESSIVENESS: int = 3
 
 # Minimum sustained silence (ms) after speech before the utterance is finalised.
-VAD_SILENCE_HOLD_MS: int = 1_200
+VAD_SILENCE_HOLD_MS: int = 500
 
 # RMS floor: buffers below this amplitude are discarded as background noise.
 VAD_ENERGY_THRESHOLD: float = 400.0

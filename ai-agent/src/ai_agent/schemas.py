@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 # The four valid MCP tool names.  Used as a Literal constraint in BrainDecision
 # so that grammar-constrained generation can only emit one of these exact strings
@@ -174,6 +174,42 @@ class CommunicatorResponse(BaseModel):
 
 
 # =============================================================================
+# PIPELINE TIMING
+# =============================================================================
+
+
+class PipelineTiming(BaseModel):
+    """Timing breakdown for each pipeline step (in seconds)."""
+
+    prompt_processing: float = Field(0.0, description="Time to validate and set up the pipeline input.")
+    brain: float = Field(0.0, description="Time spent in the Brain LLM step.")
+    tool_calling: Optional[float] = Field(None, description="Time spent in Tool Caller step (None if skipped).")
+    communicator: float = Field(0.0, description="Time spent in the Communicator LLM step.")
+    tts_synthesis: Optional[float] = Field(None, description="Time for TTS ONNX inference (text → PCM).")
+    tts_playback: Optional[float] = Field(None, description="Time for TTS audio playback to the output device.")
+
+    @computed_field  # type: ignore[misc]
+    @property
+    def pipeline_total(self) -> float:
+        """Total LLM/tool time, excluding TTS."""
+        total = self.prompt_processing + self.brain + self.communicator
+        if self.tool_calling is not None:
+            total += self.tool_calling
+        return total
+
+    @computed_field  # type: ignore[misc]
+    @property
+    def total(self) -> float:
+        """Grand total including TTS synthesis and playback."""
+        t = self.pipeline_total
+        if self.tts_synthesis is not None:
+            t += self.tts_synthesis
+        if self.tts_playback is not None:
+            t += self.tts_playback
+        return t
+
+
+# =============================================================================
 # TOP-LEVEL PIPELINE I/O
 # =============================================================================
 
@@ -190,3 +226,4 @@ class PipelineOutput(BaseModel):
     brain_decision: BrainDecision
     tool_result: Optional[ToolCallerOutput] = None
     final_response: CommunicatorResponse
+    timing: PipelineTiming = Field(default_factory=PipelineTiming)

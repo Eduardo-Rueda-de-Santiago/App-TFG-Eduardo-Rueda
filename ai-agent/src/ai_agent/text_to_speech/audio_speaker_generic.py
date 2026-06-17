@@ -43,6 +43,7 @@ Typical TTS back-ends
 - Amazon Polly / Google Cloud TTS
 """
 
+import time
 from abc import ABC, abstractmethod
 from typing import Callable, Protocol, runtime_checkable
 
@@ -101,6 +102,10 @@ class AudioSpeakerGeneric(ABC):
         self._running: bool = False
         self._is_speaking: bool = False
 
+        # Timing: duration of the last TTS burst (synthesis + playback), in seconds.
+        self._last_tts_duration: float = 0.0
+        self._tts_burst_start: float | None = None
+
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
@@ -125,6 +130,10 @@ class AudioSpeakerGeneric(ABC):
                 # If nothing is queued immediately after, transition to idle.
                 if self._is_speaking:
                     self._is_speaking = False
+                    # Record how long this burst took (synthesis + playback).
+                    if self._tts_burst_start is not None:
+                        self._last_tts_duration = time.perf_counter() - self._tts_burst_start
+                        self._tts_burst_start = None
                     self._on_speaking_stopped()
                 self.input_queue.task_done()
                 continue
@@ -132,6 +141,7 @@ class AudioSpeakerGeneric(ABC):
             # First chunk after being idle → signal mute to the detector.
             if not self._is_speaking:
                 self._is_speaking = True
+                self._tts_burst_start = time.perf_counter()
                 self._on_speaking_started()
 
             try:
@@ -151,6 +161,9 @@ class AudioSpeakerGeneric(ABC):
         self._running = False
         if self._is_speaking:
             self._is_speaking = False
+            if self._tts_burst_start is not None:
+                self._last_tts_duration = time.perf_counter() - self._tts_burst_start
+                self._tts_burst_start = None
             self._on_speaking_stopped()
         await self._teardown()
 

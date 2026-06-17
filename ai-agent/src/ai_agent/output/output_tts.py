@@ -37,7 +37,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Callable
+from typing import Callable, Optional
 
 from ai_agent.config import PIPER_CONFIG_PATH, PIPER_MODEL_PATH, PIPER_USE_CUDA
 from ai_agent.output.output_generic import OutputGeneric
@@ -96,6 +96,11 @@ class TTSOutput(OutputGeneric):
         # Background task handle
         self._speaker_task: asyncio.Task | None = None
 
+        # Timing / synchronisation
+        self._last_synth_duration: float = 0.0
+        self._last_play_duration: float = 0.0
+        self._speech_done_event: Optional[asyncio.Event] = None
+
     # ------------------------------------------------------------------
     # OutputGeneric interface
     # ------------------------------------------------------------------
@@ -104,7 +109,37 @@ class TTSOutput(OutputGeneric):
         """
         Pre-warm the Piper model and launch the speaker drain loop as a
         background asyncio Task.
+
+        Also wraps the speaker's speaking callbacks to maintain a
+        ``_speech_done_event`` for timing synchronisation.
         """
+        # Create the event inside the running event loop.
+        self._speech_done_event = asyncio.Event()
+        self._speech_done_event.set()  # idle → "done" by default
+
+        # Capture whatever callbacks are currently set on the speaker
+        # (they may already have been replaced by VoiceInput's mute hooks
+        # before this coroutine runs).
+        _orig_started = self._speaker._on_speaking_started
+        _orig_stopped = self._speaker._on_speaking_stopped
+
+        def _wrapped_started() -> None:
+            # Speech is starting: mark the event as "not done".
+            if self._speech_done_event is not None:
+                self._speech_done_event.clear()
+            _orig_started()
+
+        def _wrapped_stopped() -> None:
+            # Speech finished: capture per-stage durations, then signal "done".
+            self._last_synth_duration = getattr(self._speaker, "_last_synth_duration", 0.0)
+            self._last_play_duration = getattr(self._speaker, "_last_play_duration", 0.0)
+            if self._speech_done_event is not None:
+                self._speech_done_event.set()
+            _orig_stopped()
+
+        self._speaker._on_speaking_started = _wrapped_started
+        self._speaker._on_speaking_stopped = _wrapped_stopped
+
         logger.info("TTSOutput: pre-loading Piper model …")
         self._speaker.preload()
         logger.info("TTSOutput: Piper model ready.")
@@ -131,11 +166,39 @@ class TTSOutput(OutputGeneric):
         if not message.strip():
             return
 
+        # Pre-clear the done event so that wait_for_speech_done() called
+        # immediately after emit() blocks until playback actually finishes.
+        if self._speech_done_event is not None:
+            self._speech_done_event.clear()
+
         logger.debug("TTSOutput: queuing %d chars for synthesis.", len(message))
         await self._queue.put(message)
         # None sentinel tells the speaker that this response is complete;
         # it will fire on_speaking_stopped once the queue drains.
         await self._queue.put(None)
+
+    # ------------------------------------------------------------------
+    # Timing helpers
+    # ------------------------------------------------------------------
+
+    @property
+    def last_synth_duration(self) -> float:
+        """ONNX inference time for the most recent TTS burst (seconds)."""
+        return self._last_synth_duration
+
+    @property
+    def last_play_duration(self) -> float:
+        """sounddevice write time for the most recent TTS burst (seconds)."""
+        return self._last_play_duration
+
+    async def wait_for_speech_done(self) -> None:
+        """
+        Await until the current TTS playback burst has finished.
+
+        Returns immediately if nothing is being spoken right now.
+        """
+        if self._speech_done_event is not None:
+            await self._speech_done_event.wait()
 
     async def stop(self) -> None:
         """

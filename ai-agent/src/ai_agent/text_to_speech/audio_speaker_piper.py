@@ -49,6 +49,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Callable, Optional
@@ -137,6 +138,10 @@ class PiperSpeaker(AudioSpeakerGeneric):
 
         # Loaded lazily on first use — or eagerly via preload().
         self._voice: Optional[PiperVoice] = None
+
+        # Per-response timing breakdown (set at the end of each _synthesize_and_play call).
+        self._last_synth_duration: float = 0.0   # ONNX inference time
+        self._last_play_duration: float = 0.0    # sounddevice write time
 
     # ------------------------------------------------------------------
     # Optional eager model load
@@ -262,6 +267,9 @@ class PiperSpeaker(AudioSpeakerGeneric):
 
         logger.debug("PiperSpeaker: synthesising %d chars …", len(text))
 
+        _synth_total = 0.0
+        _play_total = 0.0
+
         # Open a raw int16 output stream.  Parameters are read from the
         # first AudioChunk but the stream must be opened before the loop,
         # so we rely on the config value (which always agrees with the chunks).
@@ -271,12 +279,29 @@ class PiperSpeaker(AudioSpeakerGeneric):
             dtype="int16",
             device=self._device,
         ) as stream:
+            # Time the synthesis generator and sounddevice writes separately.
+            # Each iteration of the for-loop measures:
+            #   - from _t to "chunk received"  → ONNX inference time for that chunk
+            #   - from "chunk received" to after stream.write()  → playback write time
+            _t = time.perf_counter()
             for chunk in voice.synthesize(text, syn_config=self._syn_config):
+                _synth_total += time.perf_counter() - _t
+
                 # AudioChunk.audio_int16_bytes: raw little-endian int16 PCM
                 pcm = np.frombuffer(chunk.audio_int16_bytes, dtype=np.int16)
 
                 # sounddevice expects shape (frames, channels) for multichannel
                 # or (frames,) for mono.  Piper always produces mono.
+                _t2 = time.perf_counter()
                 stream.write(pcm)
+                _play_total += time.perf_counter() - _t2
 
-        logger.debug("PiperSpeaker: playback complete.")
+                _t = time.perf_counter()  # reset for next synthesis iteration
+
+        self._last_synth_duration = _synth_total
+        self._last_play_duration = _play_total
+        logger.debug(
+            "PiperSpeaker: playback complete (synth=%.3fs play=%.3fs).",
+            _synth_total,
+            _play_total,
+        )

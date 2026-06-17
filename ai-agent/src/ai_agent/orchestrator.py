@@ -53,6 +53,7 @@ from __future__ import annotations
 
 import json
 import sys
+import time
 from typing import Any
 
 from llama_cpp import Llama
@@ -72,6 +73,7 @@ from ai_agent.schemas import (
     CommunicatorResponse,
     PipelineInput,
     PipelineOutput,
+    PipelineTiming,
     ToolCallerInput,
     ToolCallerOutput,
     ToolCallRecord,
@@ -508,21 +510,30 @@ def run_pipeline(manager: ModelManager, user_prompt: str) -> PipelineOutput:
         Fully validated output including the Brain decision, any tool results,
         and the final Communicator response.
     """
+    # ── Step 0: Prompt processing ──
+    t0 = time.perf_counter()
     pipeline_input = PipelineInput(user_prompt=user_prompt)
+    brain_input = BrainInput(user_prompt=pipeline_input.user_prompt)
+    t_prompt_done = time.perf_counter()
 
     # ── Step 1: Brain ──
-    brain_input = BrainInput(user_prompt=pipeline_input.user_prompt)
+    t_brain_start = time.perf_counter()
     brain_decision = run_brain(manager.brain, brain_input)
+    t_brain_done = time.perf_counter()
 
     # ── Step 2: Tool Caller (conditional) ──
     tool_result: ToolCallerOutput | None = None
+    t_tool_start: float | None = None
+    t_tool_done: float | None = None
     if brain_decision.needs_use_tool:
         tc_input = ToolCallerInput(
             brain_instruction=brain_decision.specialized_tool_prompt
         )
+        t_tool_start = time.perf_counter()
         tool_result = run_tool_caller(
             manager.tool_caller, tc_input, brain_decision
         )
+        t_tool_done = time.perf_counter()
     else:
         print("\n── Step 2: Tool Caller ── SKIPPED (no tool needed)")
 
@@ -532,10 +543,20 @@ def run_pipeline(manager: ModelManager, user_prompt: str) -> PipelineOutput:
         brain_analysis=brain_decision,
         tool_result=tool_result,
     )
+    t_comm_start = time.perf_counter()
     final_response = run_communicator(manager.communicator, comm_input)
+    t_comm_done = time.perf_counter()
+
+    timing = PipelineTiming(
+        prompt_processing=t_prompt_done - t0,
+        brain=t_brain_done - t_brain_start,
+        tool_calling=(t_tool_done - t_tool_start) if t_tool_start is not None else None,
+        communicator=t_comm_done - t_comm_start,
+    )
 
     return PipelineOutput(
         brain_decision=brain_decision,
         tool_result=tool_result,
         final_response=final_response,
+        timing=timing,
     )
