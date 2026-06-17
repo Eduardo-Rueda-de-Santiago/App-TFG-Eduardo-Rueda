@@ -1,238 +1,285 @@
 """
-main.py - End-to-end voice agent pipeline.
+main.py — Entry point for the AI agent.
 
-Pipeline overview::
+Supports two input modes and two output modes, selectable via CLI flags:
 
-    Microphone
-      -> WebRtcVadDetector        voice activity detection
-           -> FasterWhisperTranscriber   speech to text
-                 -> prompt_queue
-                           -> PydanticAudioAgentLoop
-                                 (Planner -> Tool Caller -> Conversational)
-                                       -> response_queue
-                                                 -> PiperSpeaker   text to speech
-                                                           -> Speaker output
+Input modes
+-----------
+  ``terminal`` (default)
+      Read prompts from stdin.  Supports both an interactive REPL and a
+      single-prompt ``--prompt`` run.
 
-Each component is decoupled through async queues.
-The agent (pydantic-ai) is pre-built with the model, tools, and system
-prompt before being injected into the loop -- swapping the AI behaviour
-only requires changing what is passed to PydanticAudioAgentLoop.
+  ``voice``
+      Capture audio from the microphone, detect speech with WebRTC VAD,
+      and transcribe with faster-whisper.  Runs a continuous loop:
+      listen → transcribe → pipeline → respond → repeat.
 
-Configuration
--------------
-All settings are read from environment variables or a .env file.
-See ai_agent/config/llm_config.py and .env.example for the full list.
+Output modes
+------------
+  ``terminal`` (default)
+      Print the formatted response to stdout.
 
-Minimum required for the llama-cpp provider (default)::
+  ``tts``
+      Speak the response aloud using a local Piper voice model.
 
-    AI_AGENT_PROVIDER=llama_cpp
-    AI_AGENT_LLAMA_CPP__SERVER_URL=http://127.0.0.1:8080/v1
-    AI_AGENT_LLAMA_CPP__MODEL_NAME=local-model
+Usage examples
+--------------
+::
 
-Start the llama-cpp OpenAI-compatible server separately::
+    # Interactive terminal REPL (default)
+    python -m ai_agent
 
-    python -m llama_cpp.server \
-        --model /path/to/model.gguf \
-        --host 127.0.0.1 --port 8080 \
-        --n_ctx 4096 --n_gpu_layers -1
+    # Single-shot terminal run
+    python -m ai_agent --prompt "flip card 7"
 
-Usage::
+    # Voice input, spoken output (full hands-free loop)
+    python -m ai_agent --input voice --output tts
 
-    python -m ai_agent.main
+    # Voice input, terminal output  (useful for debugging transcription)
+    python -m ai_agent --input voice --output terminal
 
-Press Ctrl+C to stop gracefully.
+    # Debug mode — also dumps full JSON pipeline output after every run
+    python -m ai_agent --debug
 """
 
 from __future__ import annotations
 
+import argparse
 import asyncio
-import logging
-import signal
+import json
+import sys
 
-from ai_agent.agent_loop.agent_pydantic import PydanticAudioAgentLoop
-from ai_agent.agent_loop.memory_game_agent import build_memory_game_agent
-from ai_agent.audio_transcription.audio_transcriber_faster_whisper import (
-    FasterWhisperTranscriber,
-)
-from ai_agent.config.llm_config import LLMConfig
-from ai_agent.text_to_speech.audio_speaker_piper import PiperSpeaker
-from ai_agent.voice_detection.audio_detector_webrtcvad import WebRtcVadDetector
-
-# ---------------------------------------------------------------------------
-# Logging
-# ---------------------------------------------------------------------------
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s  %(levelname)-8s  %(name)s - %(message)s",
-    datefmt="%H:%M:%S",
-)
-# Show DEBUG-level output for the agent loop so responses and history are visible.
-logging.getLogger("ai_agent.agent_loop").setLevel(logging.DEBUG)
-logger = logging.getLogger("main")
-
-# ---------------------------------------------------------------------------
-# Queues
-# ---------------------------------------------------------------------------
-
-# Transcribed user prompts -> agent loop
-prompt_queue: asyncio.Queue[str] = asyncio.Queue()
-
-# Agent text chunks -> TTS speaker  (None = end-of-response sentinel)
-response_queue: asyncio.Queue[str | None] = asyncio.Queue()
+from ai_agent.input.input_generic import InputGeneric
+from ai_agent.input.input_terminal import TerminalInput
+from ai_agent.input.input_voice import VoiceInput
+from ai_agent.model_manager import ModelManager
+from ai_agent.orchestrator import run_pipeline
+from ai_agent.output.output_generic import OutputGeneric
+from ai_agent.output.output_terminal import TerminalOutput
+from ai_agent.output.output_tts import TTSOutput
+from ai_agent.schemas import PipelineOutput
 
 
-# ---------------------------------------------------------------------------
-# Callbacks - wired between components for logging / state signalling
-# ---------------------------------------------------------------------------
+# =============================================================================
+# Agent loop
+# =============================================================================
 
 
-def on_speech_start() -> None:
-    logger.info("[vad] speech start")
-
-
-def on_speech_end(frames: list[bytes]) -> None:
-    logger.info("[vad] speech end -- %d frames", len(frames))
-
-
-def on_transcription_started() -> None:
-    logger.info("[stt] transcribing ...")
-
-
-def on_transcription_ready(prompt: str) -> None:
-    logger.info("[stt] prompt ready: %r", prompt)
-
-
-# ---------------------------------------------------------------------------
-# Graceful shutdown
-# ---------------------------------------------------------------------------
-
-
-async def _shutdown(
-    detector: WebRtcVadDetector,
-    agent_loop: PydanticAudioAgentLoop,
-    speaker: PiperSpeaker,
+async def run_agent_loop(
+    manager: ModelManager,
+    input_: InputGeneric,
+    output: OutputGeneric,
+    *,
+    debug: bool = False,
 ) -> None:
-    logger.info("[main] shutting down ...")
-    await detector.stop()
-    await agent_loop.stop()
-    await speaker.stop()
+    """
+    Main agent loop: repeatedly get a prompt, run the pipeline, emit a response.
 
-    tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
-    for task in tasks:
-        task.cancel()
-    await asyncio.gather(*tasks, return_exceptions=True)
-    logger.info("[main] bye.")
+    The pipeline (``run_pipeline``) is synchronous (blocking Llama inference).
+    It is offloaded to a thread executor so that the asyncio event loop stays
+    responsive during inference — particularly important in voice mode where
+    the VAD detector and TTS drain loop must keep running concurrently.
 
+    Parameters
+    ----------
+    manager:
+        A ``ModelManager`` with all three models already loaded.
+    input_:
+        The input source to read prompts from.
+    output:
+        The output channel to send responses to.
+    debug:
+        If ``True``, also print the full JSON pipeline output after each run.
+    """
+    loop = asyncio.get_event_loop()
 
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
-
-
-async def main() -> None:
-    # ------------------------------------------------------------------
-    # 1. Load LLM config and build the pydantic-ai model
-    # ------------------------------------------------------------------
-    llm_config = LLMConfig()
-    logger.info("[main] LLM provider: %s", llm_config.provider.value)
-
-    model = llm_config.build_model()
-
-    # ------------------------------------------------------------------
-    # 2. Build the memory-game agent (model + tools + system prompt).
-    #    To swap the agent's behaviour, replace build_memory_game_agent()
-    #    with any other factory that returns a pydantic-ai Agent.
-    # ------------------------------------------------------------------
-    agent = build_memory_game_agent(model)
-    logger.info("[main] agent built")
-
-    # ------------------------------------------------------------------
-    # 3. Construct pipeline components
-    # ------------------------------------------------------------------
-
-    # TTS speaker -- consumes response_queue, plays audio
-    speaker = PiperSpeaker(
-        input_queue=response_queue,
-        on_speaking_started=lambda: logger.info("[tts] speaking ..."),
-        on_speaking_stopped=lambda: logger.info("[tts] done speaking"),
-        # Point at one of the bundled voice models:
-        model_path="models/en_US-amy-medium.onnx",
-    )
-
-    # Agent loop -- consumes prompt_queue, streams to response_queue
-    agent_loop = PydanticAudioAgentLoop(
-        agent=agent,
-        input_queue=prompt_queue,
-        output_queue=response_queue,
-        sentence_chunk=True,
-    )
-
-    # STT transcriber -- receives audio frames from the detector
-    transcriber = FasterWhisperTranscriber(
-        output_queue=prompt_queue,
-        on_transcription_started=on_transcription_started,
-        on_transcription_ready=on_transcription_ready,
-        model_size="small.en",
-        device="cpu",
-        compute_type="int8",
-        language="en",
-        beam_size=5,
-    )
-    transcriber.preload()
-
-    # VAD detector -- opens the microphone, fires callbacks on speech
-    detector = WebRtcVadDetector(
-        on_speech_start=on_speech_start,
-        on_speech_end=transcriber.on_audio_end,
-        sample_rate=16_000,
-        frame_duration_ms=30,
-        energy_threshold=400.0,
-        silence_hold_ms=800,
-        vad_aggressiveness=2,
-        min_speech_frames=3,
-    )
-
-    # Cross-wire VAD <-> speaker mute gate so TTS output is not re-transcribed.
-    _orig_tts_start = speaker._on_speaking_started
-    _orig_tts_stop = speaker._on_speaking_stopped
-
-    def _on_tts_start() -> None:
-        detector.on_speaking_started()
-        _orig_tts_start()
-
-    def _on_tts_stop() -> None:
-        detector.on_speaking_stopped()
-        _orig_tts_stop()
-
-    speaker._on_speaking_started = _on_tts_start
-    speaker._on_speaking_stopped = _on_tts_stop
-
-    # ------------------------------------------------------------------
-    # 4. Register graceful shutdown on Ctrl+C / SIGTERM
-    # ------------------------------------------------------------------
-    loop = asyncio.get_running_loop()
-
-    def _sig_handler() -> None:
-        asyncio.ensure_future(_shutdown(detector, agent_loop, speaker))
-
-    # for sig in (signal.SIGINT, signal.SIGTERM):
-    #     loop.add_signal_handler(sig, _sig_handler)
-
-    # ------------------------------------------------------------------
-    # 5. Run the pipeline -- all three coroutines run concurrently
-    # ------------------------------------------------------------------
-    logger.info("[main] pipeline ready -- speak now (Ctrl+C to stop)")
+    await input_.start()
+    await output.start()
 
     try:
-        await asyncio.gather(
-            detector.start(),
-            agent_loop.start(),
-            speaker.start(),
+        while True:
+            prompt = await input_.get_next_prompt()
+            if prompt is None:
+                break
+
+            try:
+                # Run blocking LLM inference in a thread so the event loop
+                # is free for the VAD detector / TTS drain task.
+                pipeline_out: PipelineOutput = await loop.run_in_executor(
+                    None, run_pipeline, manager, prompt
+                )
+            except Exception as exc:
+                print(f"\n✗ Pipeline error: {exc}", file=sys.stderr)
+                print(
+                    "  (Check that the Memory Game backend is running on :4000)\n",
+                    file=sys.stderr,
+                )
+                continue
+
+            await output.emit(
+                pipeline_out.final_response.message,
+                task_achieved=pipeline_out.final_response.task_achieved,
+            )
+
+            if debug:
+                print("\n── Full pipeline output (JSON) ──")
+                print(pipeline_out.model_dump_json(indent=2))
+
+    finally:
+        await output.stop()
+        await input_.stop()
+
+
+# =============================================================================
+# Single-prompt run (terminal mode only)
+# =============================================================================
+
+
+async def run_single(
+    manager: ModelManager,
+    prompt: str,
+    output: OutputGeneric,
+    *,
+    debug: bool = False,
+) -> None:
+    """
+    Run the pipeline once for *prompt*, emit the response, then exit.
+
+    Parameters
+    ----------
+    manager:
+        A ``ModelManager`` with all three models already loaded.
+    prompt:
+        The user's request string.
+    output:
+        The output channel to send the response to.
+    debug:
+        If ``True``, also dump the full JSON pipeline output.
+    """
+    await output.start()
+
+    try:
+        loop = asyncio.get_event_loop()
+        pipeline_out: PipelineOutput = await loop.run_in_executor(
+            None, run_pipeline, manager, prompt
         )
-    except (KeyboardInterrupt, asyncio.CancelledError):
-        pass
+        await output.emit(
+            pipeline_out.final_response.message,
+            task_achieved=pipeline_out.final_response.task_achieved,
+        )
+        if debug:
+            print("\n── Full pipeline output (JSON) ──")
+            print(pipeline_out.model_dump_json(indent=2))
+    finally:
+        await output.stop()
+
+
+# =============================================================================
+# Entry point
+# =============================================================================
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="python -m ai_agent",
+        description="Memory Game AI agent — local multi-model LLM orchestrator.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "Examples:\n"
+            "  python -m ai_agent                           # terminal REPL\n"
+            "  python -m ai_agent --prompt 'flip card 7'   # single run\n"
+            "  python -m ai_agent --input voice --output tts  # hands-free\n"
+        ),
+    )
+    parser.add_argument(
+        "--input", "-i",
+        choices=["terminal", "voice"],
+        default="terminal",
+        help="Input source: 'terminal' (stdin) or 'voice' (microphone). Default: terminal",
+    )
+    parser.add_argument(
+        "--output", "-o",
+        choices=["terminal", "tts"],
+        default="terminal",
+        help="Output channel: 'terminal' (stdout) or 'tts' (Piper speaker). Default: terminal",
+    )
+    parser.add_argument(
+        "--prompt", "-p",
+        type=str,
+        default=None,
+        help="Run a single prompt instead of entering the interactive loop (terminal input only).",
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Print full JSON pipeline output after every run.",
+    )
+    return parser
+
+
+def main() -> None:
+    """Parse CLI arguments, load models, build I/O components, run the loop."""
+    parser = _build_parser()
+    args = parser.parse_args()
+
+    # Validate combination
+    if args.prompt and args.input == "voice":
+        parser.error("--prompt is only valid with --input terminal.")
+
+    # ── Load models ──
+    manager = ModelManager()
+    try:
+        manager.load_all()
+    except Exception as exc:
+        print(f"\n✗ Failed to load models: {exc}", file=sys.stderr)
+        print("  Check that your GGUF paths in config.py are correct.")
+        sys.exit(1)
+
+    # ── Build input and output components ──
+
+    # Build output first so that VoiceInput can receive its mute callbacks
+    if args.output == "tts":
+        # Mute callbacks will be wired after VoiceInput is created (if needed)
+        tts_output: TTSOutput | None = TTSOutput()
+        output: OutputGeneric = tts_output
+    else:
+        tts_output = None
+        output = TerminalOutput()
+
+    if args.input == "voice":
+        voice_input = VoiceInput()
+        input_: InputGeneric = voice_input
+
+        # Wire TTS mute callbacks if both voice input and TTS output are active
+        if tts_output is not None:
+            tts_output._speaker._on_speaking_started = voice_input.on_speaking_started
+            tts_output._speaker._on_speaking_stopped = voice_input.on_speaking_stopped
+    else:
+        voice_input = None
+        input_ = TerminalInput()
+
+    # ── Run ──
+    try:
+        if args.prompt:
+            # Single-run mode (terminal input only, validated above)
+            asyncio.run(
+                run_single(manager, args.prompt, output, debug=args.debug)
+            )
+        else:
+            # Print mode banner
+            mode_str = f"[input={args.input}  output={args.output}]"
+            print(f"\nMemory Game AI Agent — {mode_str}")
+            if args.input == "terminal":
+                print("Type 'quit' or 'exit' to stop.\n")
+
+            asyncio.run(
+                run_agent_loop(manager, input_, output, debug=args.debug)
+            )
+    except KeyboardInterrupt:
+        print("\nInterrupted. Goodbye!")
+    finally:
+        manager.unload_all()
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
