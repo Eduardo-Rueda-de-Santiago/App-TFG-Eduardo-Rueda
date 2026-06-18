@@ -176,9 +176,18 @@ class PipelineTiming(BaseModel):
     """Timing breakdown for each pipeline step (in seconds)."""
 
     prompt_processing: float = Field(
-        0.0, description="Time to validate and set up the pipeline input."
+        0.0,
+        description=(
+            "Aggregate LLM prompt evaluation (prefill) time across all steps."
+        ),
     )
-    brain: float = Field(0.0, description="Time spent in the Brain LLM step.")
+    prompt_processing_tps: Optional[float] = Field(
+        None,
+        description="Average prompt evaluation throughput in tokens/second.",
+    )
+    brain: float = Field(
+        0.0, description="Time spent in the Brain LLM step (generation only)."
+    )
     tool_calling: Optional[float] = Field(
         None, description="Time spent in Tool Caller step (None if skipped)."
     )

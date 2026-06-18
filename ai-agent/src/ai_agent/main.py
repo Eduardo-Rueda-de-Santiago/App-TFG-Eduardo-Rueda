@@ -74,7 +74,7 @@ def _print_timing_table(timing: PipelineTiming) -> None:
     """
     # Each row: (label, elapsed_seconds, tokens_per_second | None)
     rows: list[tuple[str, float | None, float | None]] = [
-        ("1. Prompt processing",           timing.prompt_processing,  None),
+        ("1. Prompt processing",           timing.prompt_processing,  timing.prompt_processing_tps),
         ("2. Brain (LLM)",                 timing.brain,              timing.brain_tps),
         ("3. Tool calling",                timing.tool_calling,       timing.tool_calling_tps),
         ("4. Communicator (LLM)",          timing.communicator,       timing.communicator_tps),

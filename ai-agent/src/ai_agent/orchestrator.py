@@ -56,6 +56,7 @@ import sys
 import time
 from typing import Any
 
+import llama_cpp
 from llama_cpp import Llama
 from pydantic import ValidationError
 
@@ -199,7 +200,9 @@ def _chat(
 # =============================================================================
 
 
-def run_brain(llm: Llama, inp: BrainInput) -> tuple[BrainDecision, float | None]:
+def run_brain(
+    llm: Llama, inp: BrainInput
+) -> tuple[BrainDecision, float | None, float, float | None]:
     """
     Ask the Brain model to analyse the user prompt and decide on routing.
 
@@ -215,9 +218,9 @@ def run_brain(llm: Llama, inp: BrainInput) -> tuple[BrainDecision, float | None]
 
     Returns
     -------
-    tuple[BrainDecision, float | None]
-        Routing decision and tokens-per-second throughput (or None if
-        usage data is unavailable).
+    tuple[BrainDecision, float | None, float, float | None]
+        Routing decision, generation tokens-per-second, prompt evaluation
+        time in seconds, and prompt evaluation tokens-per-second.
     """
     print("\n── Step 1: Brain ──")
     print(f"   User prompt: {inp.user_prompt!r}")
@@ -227,6 +230,8 @@ def run_brain(llm: Llama, inp: BrainInput) -> tuple[BrainDecision, float | None]
         "schema": BrainDecision.model_json_schema(),
     }
 
+    llama_cpp.llama_perf_context_reset(llm._ctx.ctx)
+
     t0 = time.perf_counter()
     resp = _chat(
         llm,
@@ -235,6 +240,10 @@ def run_brain(llm: Llama, inp: BrainInput) -> tuple[BrainDecision, float | None]
         response_format=response_format,
     )
     elapsed = time.perf_counter() - t0
+
+    perf = llama_cpp.llama_perf_context(llm._ctx.ctx)
+    prompt_eval_s = perf.t_p_eval_ms / 1000.0
+    generation_s = perf.t_eval_ms / 1000.0
 
     raw_text = resp["choices"][0]["message"]["content"]
     print(f"   Raw response: {raw_text[:200]}")
@@ -248,9 +257,19 @@ def run_brain(llm: Llama, inp: BrainInput) -> tuple[BrainDecision, float | None]
 
     usage = resp.get("usage") or {}
     completion_tokens = usage.get("completion_tokens")
-    tps = (completion_tokens / elapsed) if (completion_tokens and elapsed > 0) else None
+    prompt_tokens = usage.get("prompt_tokens")
+    tps = (
+        (completion_tokens / generation_s)
+        if (completion_tokens and generation_s > 0)
+        else None
+    )
+    pp_tps = (
+        (prompt_tokens / prompt_eval_s)
+        if (prompt_tokens and prompt_eval_s > 0)
+        else None
+    )
 
-    return decision, tps
+    return decision, tps, prompt_eval_s, pp_tps
 
 
 # =============================================================================
@@ -302,7 +321,7 @@ def run_tool_caller(
     llm: Llama,
     inp: ToolCallerInput,
     brain_decision: BrainDecision,
-) -> tuple[ToolCallerOutput, float | None]:
+) -> tuple[ToolCallerOutput, float | None, float, float | None]:
     """
     Ask the Tool Caller model to invoke a single MCP tool and execute it.
 
@@ -326,9 +345,9 @@ def run_tool_caller(
 
     Returns
     -------
-    tuple[ToolCallerOutput, float | None]
-        Aggregated tool call records and tokens-per-second throughput (or
-        None if usage data is unavailable).
+    tuple[ToolCallerOutput, float | None, float, float | None]
+        Aggregated tool call records, generation tokens-per-second, prompt
+        evaluation time in seconds, and prompt evaluation tokens-per-second.
     """
     print("\n── Step 2: Tool Caller ──")
     print(f"   Instruction: {inp.brain_instruction!r}")
@@ -346,6 +365,8 @@ def run_tool_caller(
         "function": {"name": target_tool},
     }
 
+    llama_cpp.llama_perf_context_reset(llm._ctx.ctx)
+
     t0 = time.perf_counter()
     resp = _chat(
         llm,
@@ -357,6 +378,10 @@ def run_tool_caller(
         temperature=0.0,  # FIX 3: deterministic
     )
     elapsed = time.perf_counter() - t0
+
+    perf = llama_cpp.llama_perf_context(llm._ctx.ctx)
+    prompt_eval_s = perf.t_p_eval_ms / 1000.0
+    generation_s = perf.t_eval_ms / 1000.0
 
     message = resp["choices"][0]["message"]
     tool_calls_raw = message.get("tool_calls") or []
@@ -395,12 +420,22 @@ def run_tool_caller(
 
     usage = resp.get("usage") or {}
     completion_tokens = usage.get("completion_tokens")
-    tps = (completion_tokens / elapsed) if (completion_tokens and elapsed > 0) else None
+    prompt_tokens = usage.get("prompt_tokens")
+    tps = (
+        (completion_tokens / generation_s)
+        if (completion_tokens and generation_s > 0)
+        else None
+    )
+    pp_tps = (
+        (prompt_tokens / prompt_eval_s)
+        if (prompt_tokens and prompt_eval_s > 0)
+        else None
+    )
 
     if not tool_calls_raw:
         print("   ⚠ Model produced no tool calls even with forced choice.")
         print(f"   Raw content: {message.get('content', '')[:200]}")
-        return ToolCallerOutput(calls=[]), tps
+        return ToolCallerOutput(calls=[]), tps, prompt_eval_s, pp_tps
 
     # Execute each tool call against the backend
     records: list[ToolCallRecord] = []
@@ -423,7 +458,7 @@ def run_tool_caller(
         status = "✓" if record.success else "✗"
         print(f"   {status} Result: {json.dumps(record.result)[:150]}")
 
-    return ToolCallerOutput(calls=records), tps
+    return ToolCallerOutput(calls=records), tps, prompt_eval_s, pp_tps
 
 
 # =============================================================================
@@ -433,7 +468,7 @@ def run_tool_caller(
 
 def run_communicator(
     llm: Llama, inp: CommunicatorInput
-) -> tuple[CommunicatorResponse, float | None]:
+) -> tuple[CommunicatorResponse, float | None, float, float | None]:
     """
     Ask the Communicator model (Nova) to summarise results for the user.
 
@@ -451,9 +486,10 @@ def run_communicator(
 
     Returns
     -------
-    tuple[CommunicatorResponse, float | None]
-        The final message and task-achieved flag, plus tokens-per-second
-        throughput (or None if usage data is unavailable).
+    tuple[CommunicatorResponse, float | None, float, float | None]
+        The final message and task-achieved flag, generation tokens-per-second,
+        prompt evaluation time in seconds, and prompt evaluation
+        tokens-per-second.
     """
     print("\n── Step 3: Communicator (Nova) ──")
 
@@ -485,6 +521,8 @@ def run_communicator(
         "schema": CommunicatorResponse.model_json_schema(),
     }
 
+    llama_cpp.llama_perf_context_reset(llm._ctx.ctx)
+
     t0 = time.perf_counter()
     resp = _chat(
         llm,
@@ -493,6 +531,10 @@ def run_communicator(
         response_format=response_format,
     )
     elapsed = time.perf_counter() - t0
+
+    perf = llama_cpp.llama_perf_context(llm._ctx.ctx)
+    prompt_eval_s = perf.t_p_eval_ms / 1000.0
+    generation_s = perf.t_eval_ms / 1000.0
 
     raw_text = resp["choices"][0]["message"]["content"]
     print(f"   Raw response: {raw_text[:200]}")
@@ -504,9 +546,19 @@ def run_communicator(
 
     usage = resp.get("usage") or {}
     completion_tokens = usage.get("completion_tokens")
-    tps = (completion_tokens / elapsed) if (completion_tokens and elapsed > 0) else None
+    prompt_tokens = usage.get("prompt_tokens")
+    tps = (
+        (completion_tokens / generation_s)
+        if (completion_tokens and generation_s > 0)
+        else None
+    )
+    pp_tps = (
+        (prompt_tokens / prompt_eval_s)
+        if (prompt_tokens and prompt_eval_s > 0)
+        else None
+    )
 
-    return result, tps
+    return result, tps, prompt_eval_s, pp_tps
 
 
 # =============================================================================
@@ -543,12 +595,16 @@ def run_pipeline(manager: ModelManager, user_prompt: str) -> PipelineOutput:
 
     # ── Step 1: Brain ──
     t_brain_start = time.perf_counter()
-    brain_decision, brain_tps = run_brain(manager.brain, brain_input)
+    brain_decision, brain_tps, brain_pp_s, brain_pp_tps = run_brain(
+        manager.brain, brain_input
+    )
     t_brain_done = time.perf_counter()
 
     # ── Step 2: Tool Caller (conditional) ──
     tool_result: ToolCallerOutput | None = None
     tool_tps: float | None = None
+    tool_pp_s: float = 0.0
+    tool_pp_tps: float | None = None
     t_tool_start: float | None = None
     t_tool_done: float | None = None
     if brain_decision.needs_use_tool:
@@ -557,7 +613,7 @@ def run_pipeline(manager: ModelManager, user_prompt: str) -> PipelineOutput:
             or pipeline_input.user_prompt
         )
         t_tool_start = time.perf_counter()
-        tool_result, tool_tps = run_tool_caller(
+        tool_result, tool_tps, tool_pp_s, tool_pp_tps = run_tool_caller(
             manager.tool_caller, tc_input, brain_decision
         )
         t_tool_done = time.perf_counter()
@@ -571,18 +627,30 @@ def run_pipeline(manager: ModelManager, user_prompt: str) -> PipelineOutput:
         tool_result=tool_result,
     )
     t_comm_start = time.perf_counter()
-    final_response, communicator_tps = run_communicator(
+    final_response, communicator_tps, comm_pp_s, comm_pp_tps = run_communicator(
         manager.communicator, comm_input
     )
     t_comm_done = time.perf_counter()
 
+    # Aggregate prompt processing (prefill) time across all LLM steps
+    total_prompt_eval_s = brain_pp_s + tool_pp_s + comm_pp_s
+
+    # Compute a weighted-average prompt processing tok/s
+    all_pp_tps = [t for t in (brain_pp_tps, tool_pp_tps, comm_pp_tps) if t is not None]
+    avg_pp_tps = (sum(all_pp_tps) / len(all_pp_tps)) if all_pp_tps else None
+
     timing = PipelineTiming(
-        prompt_processing=t_prompt_done - t0,
-        brain=t_brain_done - t_brain_start,
+        prompt_processing=total_prompt_eval_s,
+        prompt_processing_tps=avg_pp_tps,
+        brain=(t_brain_done - t_brain_start) - brain_pp_s,
         brain_tps=brain_tps,
-        tool_calling=(t_tool_done - t_tool_start) if t_tool_start is not None else None,
+        tool_calling=(
+            (t_tool_done - t_tool_start) - tool_pp_s
+            if t_tool_start is not None
+            else None
+        ),
         tool_calling_tps=tool_tps,
-        communicator=t_comm_done - t_comm_start,
+        communicator=(t_comm_done - t_comm_start) - comm_pp_s,
         communicator_tps=communicator_tps,
     )
 
